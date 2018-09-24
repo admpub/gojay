@@ -3,11 +3,18 @@ package gojay
 import (
 	"fmt"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func makePointer(v interface{}) interface{} {
+	var ptr = reflect.New(reflect.TypeOf(v))
+	ptr.Elem().Set(reflect.ValueOf(v))
+	return ptr.Interface()
+}
 
 func TestDecodeObjectBasic(t *testing.T) {
 	testCases := []struct {
@@ -22,33 +29,62 @@ func TestDecodeObjectBasic(t *testing.T) {
 			name: "basic",
 			json: `{
 						"testStr": "hello world!",
+						"testStrNull":  "hello world!",
 						"testInt": 4535,
+						"testIntNull": 4535,
 						"testBool": true,
+						"testBoolNull": true,
 						"testFloat32": 2.345,
+						"testFloat32Null": 2.345,
 						"testFloat64": 123.677,
+						"testFloat64Null": 123.677,
 						"testInt8": 23,
+						"testInt8Null": 23,
 						"testInt16": 1245,
+						"testInt16Null": 1245,
 						"testInt32": 456778,
+						"testInt32Null": 456778,
 						"testInt64": 1446685358,
+						"testInt64Null": 1446685358,
 						"testUint8": 255,
+						"testUint8Null": 255,
 						"testUint16": 3455,
+						"testUint16Null": 3455,
 						"testUint32": 343443,
-						"testUint64": 545665757
+						"testUint32Null": 343443,
+						"testUint64": 545665757,
+						"testUint64Null": 545665757,
+						"testSubObjectNull": {
+							"testStr": "1"
+						}
 					}`,
 			expectedResult: testObject{
-				testStr:     "hello world!",
-				testInt:     4535,
-				testBool:    true,
-				testFloat32: 2.345,
-				testFloat64: 123.677,
-				testInt8:    23,
-				testInt16:   1245,
-				testInt32:   456778,
-				testInt64:   1446685358,
-				testUint8:   255,
-				testUint16:  3455,
-				testUint32:  343443,
-				testUint64:  545665757,
+				testStr:         "hello world!",
+				testStrNull:     makePointer("hello world!").(*string),
+				testInt:         4535,
+				testIntNull:     makePointer(4535).(*int),
+				testBool:        true,
+				testBoolNull:    makePointer(true).(*bool),
+				testFloat32:     2.345,
+				testFloat32Null: makePointer(float32(2.345)).(*float32),
+				testFloat64:     123.677,
+				testFloat64Null: makePointer(float64(123.677)).(*float64),
+				testInt8:        23,
+				testInt8Null:    makePointer(int8(23)).(*int8),
+				testInt16:       1245,
+				testInt16Null:   makePointer(int16(1245)).(*int16),
+				testInt32:       456778,
+				testInt32Null:   makePointer(int32(456778)).(*int32),
+				testInt64:       1446685358,
+				testInt64Null:   makePointer(int64(1446685358)).(*int64),
+				testUint8:       255,
+				testUint8Null:   makePointer(uint8(255)).(*uint8),
+				testUint16:      3455,
+				testUint16Null:  makePointer(uint16(3455)).(*uint16),
+				testUint32:      343443,
+				testUint32Null:  makePointer(uint32(343443)).(*uint32),
+				testUint64:      545665757,
+				testUint64Null:  makePointer(uint64(545665757)).(*uint64),
 			},
 			err: false,
 		},
@@ -851,6 +887,201 @@ func TestDecodeObjectBasic0Keys(t *testing.T) {
 	}
 }
 
+type ObjectNull struct {
+	SubObject *ObjectNull
+	SubArray  *testSliceBools
+}
+
+func (o *ObjectNull) UnmarshalJSONObject(dec *Decoder, k string) error {
+	switch k {
+	case "subobject":
+		return dec.ObjectNull(&o.SubObject)
+	case "subarray":
+		return dec.ArrayNull(&o.SubArray)
+	}
+	return nil
+}
+
+func (o *ObjectNull) NKeys() int {
+	return 2
+}
+
+func TestDecodeObjectNull(t *testing.T) {
+	t.Run("sub obj should not be nil", func(t *testing.T) {
+		var o = &ObjectNull{}
+		var err = UnmarshalJSONObject([]byte(`{"subobject": {},"subarray":[true]}`), o)
+		assert.Nil(t, err)
+		assert.NotNil(t, o.SubObject)
+		assert.NotNil(t, o.SubArray)
+	})
+	t.Run("sub obj and sub array should be nil", func(t *testing.T) {
+		var o = &ObjectNull{}
+		var err = UnmarshalJSONObject([]byte(`{"subobject": null,"subarray": null}`), o)
+		assert.Nil(t, err)
+		assert.Nil(t, o.SubObject)
+		assert.Nil(t, o.SubArray)
+	})
+	t.Run(
+		"sub obj should not be be nil",
+		func(t *testing.T) {
+			var o = &ObjectNull{}
+			var err = UnmarshalJSONObject([]byte(`{"subobject":{"subobject":{}}}`), DecodeObjectFunc(func(dec *Decoder, k string) error {
+				return dec.ObjectNull(&o.SubObject)
+			}))
+			assert.Nil(t, err)
+			assert.NotNil(t, o.SubObject)
+		},
+	)
+	t.Run(
+		"sub obj should be nil",
+		func(t *testing.T) {
+			var o = &ObjectNull{}
+			var err = UnmarshalJSONObject([]byte(`{"subobject":null}`), DecodeObjectFunc(func(dec *Decoder, k string) error {
+				return dec.ObjectNull(&o.SubObject)
+			}))
+			assert.Nil(t, err)
+			assert.Nil(t, o.SubObject)
+		},
+	)
+	t.Run(
+		"should return an error as type is not ptr",
+		func(t *testing.T) {
+			var err = UnmarshalJSONObject([]byte(`{"key":{}}`), DecodeObjectFunc(func(dec *Decoder, k string) error {
+				return dec.ObjectNull("")
+			}))
+			assert.NotNil(t, err)
+			assert.Equal(t, ErrUnmarshalPtrExpected, err)
+		},
+	)
+	t.Run(
+		"should return an error as type is not ptr",
+		func(t *testing.T) {
+			var err = UnmarshalJSONObject([]byte(`{"key":[]}`), DecodeObjectFunc(func(dec *Decoder, k string) error {
+				return dec.ArrayNull("")
+			}))
+			assert.NotNil(t, err)
+			assert.Equal(t, ErrUnmarshalPtrExpected, err)
+		},
+	)
+	t.Run(
+		"should return an error as type is not ptr to UnmarshalerJSONObject",
+		func(t *testing.T) {
+			var err = UnmarshalJSONObject([]byte(`{"key":{}}`), DecodeObjectFunc(func(dec *Decoder, k string) error {
+				var strPtr = new(string)
+				return dec.ObjectNull(&strPtr)
+			}))
+			assert.NotNil(t, err)
+			assert.IsType(t, InvalidUnmarshalError(""), err)
+		},
+	)
+	t.Run(
+		"should return an error as type is not ptr to UnmarshalerJSONObject",
+		func(t *testing.T) {
+			var err = UnmarshalJSONObject([]byte(`{"key":[]}`), DecodeObjectFunc(func(dec *Decoder, k string) error {
+				var strPtr = new(string)
+				return dec.ArrayNull(&strPtr)
+			}))
+			assert.NotNil(t, err)
+			assert.IsType(t, InvalidUnmarshalError(""), err)
+		},
+	)
+	t.Run(
+		"should return an error as type is not ptr to UnmarshalerJSONObject",
+		func(t *testing.T) {
+			var err = UnmarshalJSONObject([]byte(`{"key":{}}`), DecodeObjectFunc(func(dec *Decoder, k string) error {
+				var strPtr = new(string)
+				return dec.ArrayNull(&strPtr)
+			}))
+			assert.NotNil(t, err)
+			assert.IsType(t, InvalidUnmarshalError(""), err)
+		},
+	)
+	t.Run(
+		"should return an error as type is not ptr to UnmarshalerJSONObject",
+		func(t *testing.T) {
+			var err = UnmarshalJSONObject([]byte(`{"key":"`), DecodeObjectFunc(func(dec *Decoder, k string) error {
+				var strPtr = new(string)
+				return dec.ArrayNull(&strPtr)
+			}))
+			assert.NotNil(t, err)
+			assert.IsType(t, InvalidJSONError(""), err)
+		},
+	)
+	t.Run(
+		"skip data",
+		func(t *testing.T) {
+			var err = UnmarshalJSONObject([]byte(`{"key": ""}`), DecodeObjectFunc(func(dec *Decoder, k string) error {
+				var strPtr = new(string)
+				return dec.ObjectNull(&strPtr)
+			}))
+			assert.NotNil(t, err)
+			assert.IsType(t, InvalidUnmarshalError(""), err)
+		},
+	)
+	t.Run(
+		"invalid JSON for object",
+		func(t *testing.T) {
+			var o = &ObjectNull{}
+			var err = UnmarshalJSONObject([]byte(`{"subobject":{"subobject":a}`), DecodeObjectFunc(func(dec *Decoder, k string) error {
+				return dec.ObjectNull(&o.SubObject)
+			}))
+			assert.NotNil(t, err)
+			assert.IsType(t, InvalidJSONError(""), err)
+		},
+	)
+	t.Run(
+		"invalid JSON for object",
+		func(t *testing.T) {
+			var o = &testSliceBools{}
+			var err = UnmarshalJSONObject([]byte(`{"subobject":a`), DecodeObjectFunc(func(dec *Decoder, k string) error {
+				return dec.ArrayNull(&o)
+			}))
+			assert.NotNil(t, err)
+			assert.IsType(t, InvalidJSONError(""), err)
+		},
+	)
+	t.Run(
+		"invalid JSON for object",
+		func(t *testing.T) {
+			var err = UnmarshalJSONObject([]byte(`{"key":a`), DecodeObjectFunc(func(dec *Decoder, k string) error {
+				var strPtr = new(string)
+				return dec.ObjectNull(&strPtr)
+			}))
+			assert.NotNil(t, err)
+			assert.IsType(t, InvalidJSONError(""), err)
+		},
+	)
+	t.Run(
+		"invalid JSON for object",
+		func(t *testing.T) {
+			var err = UnmarshalJSONObject([]byte(`{"subobject": {},"}`), DecodeObjectFunc(func(dec *Decoder, k string) error {
+				var o = &ObjectNull{}
+				return dec.ObjectNull(&o)
+			}))
+			assert.NotNil(t, err)
+			assert.IsType(t, InvalidJSONError(""), err)
+		},
+	)
+	t.Run(
+		"invalid JSON for object",
+		func(t *testing.T) {
+			var o = &ObjectNull{}
+			var err = UnmarshalJSONObject([]byte(`{"subobject": a`), o)
+			assert.NotNil(t, err)
+			assert.IsType(t, InvalidJSONError(""), err)
+		},
+	)
+	t.Run(
+		"invalid JSON for object",
+		func(t *testing.T) {
+			var o = &ObjectNull{}
+			var err = UnmarshalJSONObject([]byte(`{"subobject": na`), o)
+			assert.NotNil(t, err)
+			assert.IsType(t, InvalidJSONError(""), err)
+		},
+	)
+}
+
 func TestDecodeObjectComplex(t *testing.T) {
 	testCases := []struct {
 		name            string
@@ -1002,7 +1233,7 @@ func TestDecoderObject(t *testing.T) {
 	assertResult(t, v, err)
 }
 
-func TestDecodeObjectNull(t *testing.T) {
+func TestDecodeObjectJSONNull(t *testing.T) {
 	json := []byte(`null`)
 	v := &TestObj{}
 	err := Unmarshal(json, v)
@@ -1375,6 +1606,10 @@ func TestSkipObject(t *testing.T) {
 		{
 			name: "basic-escaped",
 			json: `"key":"value\\\\\\\" hello"}`,
+		},
+		{
+			name: "basic-escaped",
+			json: `"key":"value\\\\\\\\"}`,
 		},
 		{
 			name: "basic-err",

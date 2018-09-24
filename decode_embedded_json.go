@@ -22,7 +22,6 @@ func (dec *Decoder) decodeEmbeddedJSON(ej *EmbeddedJSON) error {
 			if err != nil {
 				return err
 			}
-			dec.cursor++
 		case 't':
 			beginOfEmbeddedJSON = dec.cursor
 			dec.cursor++
@@ -30,7 +29,6 @@ func (dec *Decoder) decodeEmbeddedJSON(ej *EmbeddedJSON) error {
 			if err != nil {
 				return err
 			}
-			dec.cursor++
 		// is false
 		case 'f':
 			beginOfEmbeddedJSON = dec.cursor
@@ -39,7 +37,6 @@ func (dec *Decoder) decodeEmbeddedJSON(ej *EmbeddedJSON) error {
 			if err != nil {
 				return err
 			}
-			dec.cursor++
 		// is an object
 		case '{':
 			beginOfEmbeddedJSON = dec.cursor
@@ -62,7 +59,7 @@ func (dec *Decoder) decodeEmbeddedJSON(ej *EmbeddedJSON) error {
 		break
 	}
 	if err == nil {
-		if dec.cursor-1 > beginOfEmbeddedJSON {
+		if dec.cursor-1 >= beginOfEmbeddedJSON {
 			*ej = append(*ej, dec.data[beginOfEmbeddedJSON:dec.cursor]...)
 		}
 		dec.called |= 1
